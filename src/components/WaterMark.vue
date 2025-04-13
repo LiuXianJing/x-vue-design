@@ -1,7 +1,20 @@
 <script setup lang="ts">
-import { onMounted, ref, toRefs, watch } from 'vue'
+import { onMounted, onUnmounted, ref, toRefs, watch, type VNodeRef } from 'vue'
 
-const props = defineProps({
+type Config = {
+    fontSize?: number | string // 水印字体大小
+    textRotate?: number // 水印文字倾斜角度
+}
+
+interface PropsInterface {
+    readonly isTrue?: boolean;
+    readonly text: string;
+    readonly opacity: number;
+    readonly density: number; // 水印密度
+    readonly config?: Config;
+}
+
+const props: PropsInterface = defineProps({
   isTrue: {
     type: Boolean,
     default: true
@@ -12,40 +25,53 @@ const props = defineProps({
   },
   opacity: {
     type: Number,
-    default: 1,
+    default: 0.3,
   },
   density: {
     type: Number,
     default: 1
+  },
+  config: {
+    type: Object,
+    default: {
+      fontSize: '16px',
+      textRotate: 45
+    }
   }
 })
-const { text, opacity, density } = toRefs(props)
+const { text, opacity, density, config } = toRefs<PropsInterface>(props)
 
-const waterMarkRef = ref(null)
+const waterMarkRef = ref<VNodeRef | null>(null)
+const observerRef = ref<MutationObserver>()
 
-const generateWaterMark = () => {
-    const canvas = document.createElement('canvas')
-    const context = canvas.getContext('2d')
+const generateWaterMark: () => string = () => {
+    const canvas: HTMLCanvasElement = document.createElement('canvas')
+    const context: CanvasRenderingContext2D | null = canvas.getContext('2d')
     if(!context) {
-        return
+        return ''
     }
     canvas.width = density.value * 200
     canvas.height = density.value * 200
-    context.rotate(- 45 * Math.PI / 180)
-    context.fillText(props.text, 20, density.value * 100)
+    context.rotate(- (config?.value?.textRotate || 45) * Math.PI / 180)
+    context.fillText(text.value, 20, density.value * 100)
     context.fillStyle = `rgba(100, 100, 100, ${opacity.value})`
-    context.font = '16px'
-    const dataUrl = canvas.toDataURL('image/png')
+    const fontSize: number | string | undefined = config?.value?.fontSize
+    let fontSize_: string = ''
+    if(fontSize === 'number') {
+      fontSize_ = `${fontSize}px`
+    }
+    context.font = fontSize_ || '16px'
+    const dataUrl: string = canvas.toDataURL('image/png')
     return dataUrl
 }
 
 // 禁止用户删除水印
-const initObserve = () => {
+const initObserve: () => void = () => {
     const observer = new MutationObserver((mutations: MutationRecord[]) => {
         mutations.forEach((mutation: MutationRecord) => {
-            const removedNodes = mutation.removedNodes
+            const removedNodes: NodeList = mutation.removedNodes
             if(removedNodes.length) {
-                const removedNodesArr = Array.from(removedNodes)
+                const removedNodesArr: Node[] = Array.from(removedNodes)
                 if(removedNodesArr.some(node => node === waterMarkRef.value)) {
                     if(waterMarkRef.value) {
                         document.body.appendChild(waterMarkRef.value)
@@ -56,10 +82,15 @@ const initObserve = () => {
         })
     })
     observer.observe(document.body, {childList: true, subtree: true})
+    observerRef.value = observer
 }
 
 onMounted(() => {
   initObserve()
+})
+
+onUnmounted(() => {
+  observerRef.value?.disconnect()
 })
 
 watch(text, (newVal) => {
@@ -84,7 +115,7 @@ watch(text, (newVal) => {
     left: 0;
     width: 100vw;
     height: 100vh;
-    opacity: v-bind('opacity');
+    opacity: v-bind(opacity);
     background-repeat: repeat;
     z-index: 1000000;
     pointer-events: none;
