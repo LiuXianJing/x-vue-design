@@ -1,4 +1,7 @@
 {
+  "vueCompilerOptions": {
+    "types": ["vue"]
+  },
   "files": [],
   "references": [
     { "path": "./tsconfig.app.json" },
