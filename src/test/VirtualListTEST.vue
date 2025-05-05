@@ -26,7 +26,7 @@ onMounted(() => {
   <div>
     <p class="component-name">VirtualList: </p>
     <div>
-      <VirtualList :item="items"/>
+      <VirtualList :items="items"/>
     </div>
   </div>
 </template>

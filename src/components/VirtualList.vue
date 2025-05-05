@@ -34,16 +34,20 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, onMounted, nextTick } from "vue"
+import { ref, toRefs, watch, onMounted, nextTick, computed } from "vue"
 
 interface Item {
     id: string | number
     content: string
 }
 
-const props = defineProps<{
-    items: Item[]
-}>
+const props = defineProps({
+    items: {
+        type: Array,
+        default: [],
+    }
+})
+const { items } = toRefs(props)
 
 const containerRef = ref<HTMLElement>()
 const scrollRef = ref<HTMLElement>()
@@ -71,7 +75,7 @@ const getVisibleRange = (scrollTop: number): [number, number] => {
 
 const visibleItems = computed(() => {
     const [start, end] = getVisibleRange(scrollOffset.value)
-    return props.items.slice(start, end)
+    return items.value.slice(start, end)
 })
 
 const updateScroll = () => {
@@ -106,7 +110,7 @@ onMounted(() => {
     }
 })
 
-watch(() => props.items, () => {
+watch(items, () => {
     itemRefs.value = []
     itemHeights.value = []
     nextTick(setItemHeights)
