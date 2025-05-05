@@ -1,0 +1,306 @@
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gantt</title>
+    <style>
+        canvas {
+            border: 1px solid #ddd;
+            background-color: #f5f5f5;
+            cursor: default;
+        }
+        .controls {
+            margin: 10px 0;
+        }
+        .task-tooltip {
+            position: absolute;
+            background-color: #fff;
+            border: 1px solid #ddd;
+            padding: 10px;
+            border-radius: 4px;
+            box-shadow: 2px 2px 5px rgba(0, 0, 0, 0.1);
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="controls">
+        <button onclick="zoomIn">放大</button>
+        <button onclick="zoomOut">缩小</button>
+        <div id="tooltip" class="task-tooltip"></div>
+    </div>
+    <canvas id="ganttCanvas" width="800" height="400"></canvas>
+
+    <script>
+        const canvas = document.getElementById('ganttCanvas')
+        const ctx = canvas.getContext('2d')
+        const tooltip = document.getElementById('tooltip')
+
+        const config = {
+            zoomLevel: 1,
+            timeUnitWidth: 50,
+            taskHeight: 30,
+            gutter: 10,
+            colors: ['#4caf50', '#ff9800', '#2196f3'],
+            progressColor: '#4caf50',
+            dependencyColor: '#999',
+            tooltipDelay: 500,
+        }
+
+        const tasks = [
+            {
+                id: 1,
+                name: '需求分析',
+                start: new Date('2025-05-01'),
+                end: new Date('2025-05-07'),
+                progress: 0.8,
+                color: 0,
+                dependsOn: [],
+            },
+            {
+                id: 2,
+                name: '设计开发',
+                start: new Date('2025-05-08'),
+                end: new Date('2025-05-15'),
+                progress: 0.5,
+                color: 1,
+                dependsOn: [],
+            },
+            {
+                id: 3,
+                name: '测试部署',
+                start: new Date('2025-05-16'),
+                end: new Date('2025-05-22'),
+                progress: 0.3,
+                color: 2,
+                dependsOn: [],
+            },
+        ]
+
+        let isDragging = false
+        let draggedTask = null
+        let dragType = 'start'
+        let dragOffset = {
+            x: 0,
+            y: 0,
+        }
+        let scrollOffset = 0
+        let tooltipTimeout = null
+
+        function drawGantt() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height)
+            drawTimeAxis()
+            drawDependencies()
+            drawTasks()
+        }
+
+        function drawTimeAxis() {
+            const today = new Date()
+            const firstDay = new Date(tasks[0].start)
+            firstDay.setDate(firstDay.getDate() - 3) // 显示前3天
+            ctx.save()
+            ctx.font = '12px Arial'
+            ctx.fillStyle = '#666'
+            ctx.translate(scrollOffset, 0)
+            // 绘制日期线
+            let date = new Date(firstDay)
+            while(date <= new Date(tasks[tasks.length - 1].end)) {
+                const x = dateToPixel(date)
+                ctx.beginPath()
+                ctx.moveTo(x, 0)
+                ctx.lineTo(x, canvas.height)
+                ctx.strokeStyle = date.getDay() === 0 ? '#999' : '#ddd'
+                ctx.stroke()
+                // 绘制日期标签
+                if(date.getDate() || date.getHours() === 0 && date.getMinutes() === 0) {
+                    const text = `${date.getMonth() + 1}/${date.getDate()}`
+                    ctx.fillText(text, x - 20, 20)
+                }
+                date.setDate(date.getDate() + 1)
+            }
+            ctx.restore()
+        }
+
+        function drawDependencies() {
+            tasks.forEach(task => {
+                task.dependsOn.forEach(dependId => {
+                    const depTask = tasks.find(t => t.id === dependId)
+                    if(depTask) {
+                        const startPixel = dateToPixel(depTask.end)
+                        const endPixel = dateToPixel(task.start)
+                        ctx.beginPath()
+                        ctx.moveTo(startPixel, depTask.y + config.taskHeight / 2)
+                        ctx.lineTo(endPixel, task.y + config.taskHeight / 2)
+                        ctx.strokeStyle = config.dependencyColor
+                        ctx.store()
+                    }
+                })
+            })
+        }
+
+        function drawTasks() {
+            tasks.forEach((task, index) => {
+                task.y = index * (config.taskHeight + config.gutter) + config.gutter
+                drawTask(task)
+            })
+        }
+
+        function drawTask(task) {
+            const startPixel = dateToPixel(task.start)
+            const endPixel = dateToPixel(task.end)
+            const progressPixel = startPixel + (endPixel - startPixel) * task.progress
+
+            const yGap = 20 // 时间轴高度
+            ctx.save()
+            ctx.fillStyle = config.colors[task.color]
+            ctx.fillRect(startPixel, task.y + yGap, endPixel - startPixel, config.taskHeight)
+
+            //绘制进度条
+            ctx.fillStyle = config.progressColor
+            ctx.fillRect(startPixel, task.y + yGap, progressPixel - startPixel, config.taskHeight)
+
+            // 绘制结束时间标记
+            ctx.fillStyle = '#fff'
+            ctx.fillRect(endPixel - 3 , task.y + yGap, 6, config.taskHeight)
+
+            // 绘制任务名称
+            ctx.fillStyle = '#333'
+            ctx.fillText(task.name, startPixel + 5, task.y + config.taskHeight - 10 + yGap)
+            ctx.restore()
+        }
+
+        function dateToPixel(date) {
+            const firstDay = new Date(tasks[0].start)
+            const days = (date - firstDay) / (1000 * 60 * 60 * 24)
+            return config.gutter + days * config.timeUnitWidth * config.zoomLevel - scrollOffset
+        }
+
+        function pixelToDate(pixel) {
+            const firstDay = new Date(tasks[0].start)
+            const days = (pixel + scrollOffset - config.gutter) / (config.timeUnitWidth * config.zoomLevel)
+            return new Date(firstDay.getTime() + days * 24 * 60 * 60 * 1000)
+        }
+
+        canvas.addEventListener('mousedown', (e) => {
+            const rect = canvas.getBoundingClientRect()
+            const x = e.clientX - rect.left + scrollOffset
+            const y = e.clientY - rect.top
+            // 监测任务拖拽
+            tasks.forEach((task) => {
+                const startPixel = dateToPixel(task.start)
+                const endPixel = dateToPixel(task.end)
+                const yStart = task.y
+                const yEnd = task.y + config.taskHeight
+                if(x >= startPixel && x <= endPixel && y >= yStart && y <= yEnd) {
+                    isDragging = true
+                    draggedTask = task
+                    if(x > endPixel - 10) {
+                        dragType = 'end'
+                        dragOffset.x = x - endPixel
+                    } else {
+                        dragType = 'start'
+                        dragOffset.x = x - startPixel
+                    }
+                    dragOffset.y = y - yStart
+                    return
+                }
+            })
+
+            //监测时间轴平移
+            if(!isDragging) {
+                canvas.addEventListener('mousemove', (e) => {
+                    const startScroll = scrollOffset
+                    const startClientX = e.clientX
+                    const delta = e.clientX - startClientX
+                    scrollOffset = startScroll - delta
+                    drawGantt()
+                })
+                e.preventDefault()
+            }
+        })
+
+        function handleScroll(e) {
+            const delta = e.clientX - startClientX
+            scrollOffset = startScroll - delta
+            drawGantt()
+        }
+
+        canvas.addEventListener('mousemove', (e) => {
+            if(isDragging) {
+                const rect = canvas.getBoundingClientRect()
+                const x = e.clientX - rect.left + scrollOffset
+                const y = e.clientY - rect.top
+                const newPixel = x - dragOffset.x
+                const newDate = pixelToDate(newPixel)
+                if(dragType === 'start') {
+                    if(newDate < draggedTask.end) {
+                        draggedTask.start = newDate
+                    }
+                } else {
+                    if(newDate > draggedTask.start) {
+                        draggedTask.end = newDate
+                    }
+                }
+                drawGantt()
+            }
+            if(!isDragging) {
+                const rect = canvas.getBoundingClientRect()
+                const x = e.clientX - rect.left + scrollOffset
+                const y = e.clientY - rect.top
+                tasks.forEach((task) => {
+                    const startPixel = dateToPixel(task.start)
+                    const endPixel = dateToPixel(task.end)
+                    const yStart = task.y
+                    const yEnd = task.y + config.taskHeight
+                    if(x >= startPixel && x <= endPixel && y >= yStart && y <= yEnd) {
+                        clearTimeout(tooltipTimeout)
+                        showTooltip(task)
+                    } else {
+                        tooltipTimeout = setTimeout(hideTooltip, 500)
+                    }
+                })
+            }
+        })
+
+        canvas.addEventListener('mouseenter', (e) => {
+            
+        })
+
+        canvas.addEventListener('mouseup', (e) => {
+            isDragging = false
+            draggedTask = null
+        })
+
+        function showTooltip(task) {
+            const rect = canvas.getBoundingClientRect()
+            const x = rect.left + dateToPixel(task.end) - scrollOffset - 10
+            const y = rect.top + task.y - 20
+            tooltip.style.left = ` ${x}px`
+            tooltip.style.top = ` ${y}px`
+            tooltip.innerHTML = `
+                <div><strong>任务名称：</strong>${task.name}</div>
+                <div><strong>开始时间：</strong>${task.start}</div>
+                <div><strong>结束时间：</strong>${task.end}</div>
+                <div><strong>进度：</strong>${Math.round(task.progress  * 100)}%</div>
+            `
+            tooltip.style.display = 'block'
+        }
+
+        function hideTooltip() {
+            tooltip.style.display = 'none'
+        }
+
+        function zoomIn() {
+            config.zoomLevel *= 1.2
+            drawGantt()
+        }
+
+        function zoomOut() {
+            config.zoomLevel = Math.max(0.2, config.zoomLevel * 0.8)
+            drawGantt()
+        }
+
+        drawGantt()
+    </script>
+</body>
+</html>
